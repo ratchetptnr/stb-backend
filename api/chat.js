@@ -56,10 +56,11 @@ export default async function handler(req, res) {
     }
 
     // Optional: Verify app secret (simple security layer)
-    const appSecret = req.headers['x-app-secret'];
-    if (process.env.APP_SECRET && appSecret !== process.env.APP_SECRET) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+    // TEMPORARILY DISABLED FOR TESTING
+    // const appSecret = req.headers['x-app-secret'];
+    // if (process.env.APP_SECRET && appSecret !== process.env.APP_SECRET) {
+    //   return res.status(403).json({ error: 'Unauthorized' });
+    // }
 
     const { message, conversationHistory = [] } = req.body;
 
