@@ -1,9 +1,5 @@
 {
   "version": 2,
-  "env": {
-    "GEMINI_API_KEY": "@gemini-api-key",
-    "APP_SECRET": "@app-secret"
-  },
   "functions": {
     "api/**/*.js": {
       "memory": 1024,
