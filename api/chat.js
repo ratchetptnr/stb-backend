@@ -70,7 +70,7 @@ export default async function handler(req, res) {
 
     // Initialize model
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
+      model: "models/gemini-2.5-flash-lite",
       generationConfig: {
         temperature: 0.7,
         topK: 40,
