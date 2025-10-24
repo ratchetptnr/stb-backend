@@ -87,8 +87,27 @@ export default async function handler(req, res) {
       })),
     });
 
-    // Send message and get response
-    const result = await chat.sendMessage(message);
+    // Send message and get response with retry logic for overload errors
+    let result;
+    let retries = 0;
+    const MAX_RETRIES = 2;
+
+    while (retries <= MAX_RETRIES) {
+      try {
+        result = await chat.sendMessage(message);
+        break; // Success, exit retry loop
+      } catch (err) {
+        if (err.status === 503 && retries < MAX_RETRIES) {
+          console.log(`Gemini API overloaded, retry ${retries + 1}/${MAX_RETRIES}`);
+          retries++;
+          // Exponential backoff: 1s, 2s
+          await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+        } else {
+          throw err; // Re-throw if not 503 or out of retries
+        }
+      }
+    }
+
     const response = await result.response;
     const text = response.text();
 
@@ -102,6 +121,10 @@ export default async function handler(req, res) {
     console.error('Chat API error:', error);
 
     // Handle specific error types
+    if (error.status === 503 || error.message?.includes('overloaded')) {
+      return res.status(503).json({ error: 'AI service is temporarily overloaded. Please try again in a moment.' });
+    }
+
     if (error.message?.includes('quota')) {
       return res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
     }
