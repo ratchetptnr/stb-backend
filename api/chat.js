@@ -52,6 +52,28 @@ const corsHeaders = {
 };
 
 /**
+ * Format reset time into a human-readable message
+ */
+function formatResetTime(resetTimestamp) {
+  const now = Date.now();
+  const resetTime = resetTimestamp * 1000; // Convert to milliseconds
+  const diffMs = resetTime - now;
+
+  if (diffMs <= 0) return 'now';
+
+  const diffMinutes = Math.ceil(diffMs / 60000);
+  const diffHours = Math.ceil(diffMs / 3600000);
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''}`;
+  } else if (diffHours < 24) {
+    return `${diffHours} hour${diffHours > 1 ? 's' : ''}`;
+  } else {
+    return 'tomorrow';
+  }
+}
+
+/**
  * Check rate limits using Upstash Redis
  */
 async function checkRateLimit(ip) {
@@ -65,10 +87,11 @@ async function checkRateLimit(ip) {
     // Check global daily limit (use fixed key for all users)
     const globalDailyResult = await globalDailyRatelimit.limit('global');
     if (!globalDailyResult.success) {
+      const waitTime = formatResetTime(globalDailyResult.reset);
       return {
         allowed: false,
         reason: 'daily_limit',
-        message: 'Daily request limit reached. Please try again tomorrow.',
+        message: `Global daily limit reached (900 questions/day for all users). Please try again in ${waitTime}.`,
         resetTime: globalDailyResult.reset
       };
     }
@@ -76,10 +99,11 @@ async function checkRateLimit(ip) {
     // Check global RPM limit
     const globalRpmResult = await globalRpmRatelimit.limit('global');
     if (!globalRpmResult.success) {
+      const waitTime = formatResetTime(globalRpmResult.reset);
       return {
         allowed: false,
         reason: 'rpm_limit',
-        message: 'Too many requests per minute. Please wait a moment.',
+        message: `Too many questions per minute (12/minute globally). Please wait ${waitTime} and try again.`,
         resetTime: globalRpmResult.reset
       };
     }
@@ -87,10 +111,11 @@ async function checkRateLimit(ip) {
     // Check per-user limit (by IP)
     const userResult = await perUserRatelimit.limit(ip);
     if (!userResult.success) {
+      const waitTime = formatResetTime(userResult.reset);
       return {
         allowed: false,
         reason: 'user_limit',
-        message: 'You have reached your daily limit of 50 questions. Please try again tomorrow.',
+        message: `You have reached your daily limit of 50 questions. Please try again in ${waitTime}.`,
         resetTime: userResult.reset
       };
     }
