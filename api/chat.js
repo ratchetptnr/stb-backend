@@ -4,9 +4,45 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Initialize Redis for rate limiting (only if credentials are provided)
+let redis = null;
+let perUserRatelimit = null;
+let globalDailyRatelimit = null;
+let globalRpmRatelimit = null;
+
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+  redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+
+  // Per-user rate limit: 50 requests per day (generous, prevents single user abuse)
+  perUserRatelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(50, '24 h'),
+    prefix: 'ratelimit:user',
+  });
+
+  // Global daily limit: 900 requests per day (90% of Gemini's 1000 free tier limit)
+  globalDailyRatelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(900, '24 h'),
+    prefix: 'ratelimit:global:daily',
+  });
+
+  // Global RPM limit: 12 requests per minute (80% of Gemini's 15 RPM free tier limit)
+  globalRpmRatelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(12, '1 m'),
+    prefix: 'ratelimit:global:rpm',
+  });
+}
 
 // CORS headers
 const corsHeaders = {
@@ -15,24 +51,56 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, X-App-Secret',
 };
 
-// Simple rate limiting (in-memory, resets on cold start)
-const requestCounts = new Map();
-const RATE_LIMIT = 100; // requests per IP per hour
-const RATE_WINDOW = 60 * 60 * 1000; // 1 hour in ms
-
-function checkRateLimit(ip) {
-  const now = Date.now();
-  const record = requestCounts.get(ip) || { count: 0, resetTime: now + RATE_WINDOW };
-
-  if (now > record.resetTime) {
-    record.count = 0;
-    record.resetTime = now + RATE_WINDOW;
+/**
+ * Check rate limits using Upstash Redis
+ */
+async function checkRateLimit(ip) {
+  // If Redis is not configured, allow all requests (fallback)
+  if (!redis || !perUserRatelimit || !globalDailyRatelimit || !globalRpmRatelimit) {
+    console.warn('Rate limiting not configured - Redis credentials missing');
+    return { allowed: true };
   }
 
-  record.count++;
-  requestCounts.set(ip, record);
+  try {
+    // Check global daily limit (use fixed key for all users)
+    const globalDailyResult = await globalDailyRatelimit.limit('global');
+    if (!globalDailyResult.success) {
+      return {
+        allowed: false,
+        reason: 'daily_limit',
+        message: 'Daily request limit reached. Please try again tomorrow.',
+        resetTime: globalDailyResult.reset
+      };
+    }
 
-  return record.count <= RATE_LIMIT;
+    // Check global RPM limit
+    const globalRpmResult = await globalRpmRatelimit.limit('global');
+    if (!globalRpmResult.success) {
+      return {
+        allowed: false,
+        reason: 'rpm_limit',
+        message: 'Too many requests per minute. Please wait a moment.',
+        resetTime: globalRpmResult.reset
+      };
+    }
+
+    // Check per-user limit (by IP)
+    const userResult = await perUserRatelimit.limit(ip);
+    if (!userResult.success) {
+      return {
+        allowed: false,
+        reason: 'user_limit',
+        message: 'You have reached your daily limit of 50 questions. Please try again tomorrow.',
+        resetTime: userResult.reset
+      };
+    }
+
+    return { allowed: true };
+  } catch (error) {
+    console.error('Rate limit check error:', error);
+    // On error, allow the request (fail open)
+    return { allowed: true };
+  }
 }
 
 export default async function handler(req, res) {
@@ -51,8 +119,13 @@ export default async function handler(req, res) {
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
 
     // Check rate limit
-    if (!checkRateLimit(clientIp)) {
-      return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+    const rateLimitResult = checkRateLimit(clientIp);
+    if (!rateLimitResult.allowed) {
+      console.log(`Rate limit hit: ${rateLimitResult.reason} for IP ${clientIp}`);
+      return res.status(429).json({
+        error: rateLimitResult.message,
+        reason: rateLimitResult.reason
+      });
     }
 
     // Optional: Verify app secret (simple security layer)

@@ -16,6 +16,8 @@
   "author": "Line Height Design",
   "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.21.0"
+    "@google/generative-ai": "^0.21.0",
+    "@upstash/ratelimit": "^2.0.6",
+    "@upstash/redis": "^1.35.6"
   }
 }
