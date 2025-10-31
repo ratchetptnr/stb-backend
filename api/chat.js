@@ -119,7 +119,7 @@ export default async function handler(req, res) {
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
 
     // Check rate limit
-    const rateLimitResult = checkRateLimit(clientIp);
+    const rateLimitResult = await checkRateLimit(clientIp);
     if (!rateLimitResult.allowed) {
       console.log(`Rate limit hit: ${rateLimitResult.reason} for IP ${clientIp}`);
       return res.status(429).json({
