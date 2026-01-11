@@ -160,16 +160,28 @@ export default async function handler(req, res) {
     //   return res.status(403).json({ error: 'Unauthorized' });
     // }
 
-    const { message, conversationHistory = [] } = req.body;
+    const { message, conversationHistory = [], language = 'telugu' } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Initialize model with Telugu system instruction
-    const model = genAI.getGenerativeModel({
-      model: "models/gemini-2.5-flash-lite",
-      systemInstruction: `You are a helpful Bible study assistant for Telugu-speaking users.
+    // Dynamic System Instruction based on requested language
+    let systemPrompt;
+    if (language === 'english') {
+       systemPrompt = `You are a helpful Bible study assistant.
+       
+CRITICAL RULES:
+1. ALWAYS respond in ENGLISH.
+2. Be warm, patient, and encouraging.
+3. Provide clear, accurate answers about Bible content.
+4. When the user provides their current Bible location, use that context to give relevant answers.
+5. Keep responses concise but thorough.
+
+Remember: The user has explicitly requested English. Do not use Telugu.`;
+    } else {
+       // Default to Telugu
+       systemPrompt = `You are a helpful Bible study assistant for Telugu-speaking users.
 
 CRITICAL RULES:
 1. ALWAYS respond in Telugu (తెలుగు)
@@ -184,7 +196,13 @@ LANGUAGE EXAMPLES:
 - "బైబిల్ ప్రకారం..." (According to the Bible...)
 - "ఈ అధ్యాయం గురించి..." (About this chapter...)
 
-Remember: Always respond in Telugu, even if the user writes in English.`,
+Remember: Always respond in Telugu, even if the user writes in English.`;
+    }
+
+    // Initialize model with dynamic system instruction
+    const model = genAI.getGenerativeModel({
+      model: "models/gemini-2.5-flash-lite",
+      systemInstruction: systemPrompt,
       generationConfig: {
         temperature: 0.7,
         topK: 40,
