@@ -74,11 +74,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Verify app secret
-  const appSecret = req.headers['x-app-secret'];
-  if (process.env.APP_SECRET && appSecret !== process.env.APP_SECRET) {
-    return res.status(403).json({ error: 'Unauthorized' });
-  }
+  // App secret check disabled (consistent with /api/chat)
+  // const appSecret = req.headers['x-app-secret'];
+  // if (process.env.APP_SECRET && appSecret !== process.env.APP_SECRET) {
+  //   return res.status(403).json({ error: 'Unauthorized' });
+  // }
 
   const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   const rateLimitResult = await checkRateLimit(clientIp);
