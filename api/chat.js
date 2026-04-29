@@ -123,6 +123,12 @@ function getAppCheckVerifier() {
     return appCheckVerifier;
   }
 
+  if (!process.env.FIREBASE_PROJECT_ID) {
+    throw Object.assign(new Error('FIREBASE_PROJECT_ID is not configured'), {
+      code: 'app/missing-project-id',
+    });
+  }
+
   const existingApp = getApps()[0];
   if (existingApp) {
     appCheckVerifier = getAppCheck(existingApp);
@@ -143,24 +149,48 @@ async function verifyAppCheckToken(req) {
   const token = req.headers['x-firebase-appcheck'];
 
   if (!token || Array.isArray(token)) {
-    return { ok: false, status: 403, error: 'Missing App Check token' };
+    return {
+      ok: false,
+      status: 403,
+      error: 'Missing App Check token',
+      reason: 'missing_app_check_token',
+    };
   }
 
   try {
     const claims = await getAppCheckVerifier().verifyToken(token);
     return { ok: true, claims };
   } catch (error) {
-    console.error('App Check verification failed:', error);
+    console.error('App Check verification failed:', {
+      code: error?.code,
+      message: error?.message,
+      projectIdConfigured: Boolean(process.env.FIREBASE_PROJECT_ID),
+      serviceAccountConfigured: Boolean(
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+        process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
+      ),
+    });
 
     if (
+      error.code === 'app/missing-project-id' ||
       error.code === 'app/invalid-credential' ||
       error.code === 'app/invalid-app-options' ||
       error.code === 'app/no-app'
     ) {
-      return { ok: false, status: 500, error: 'App Check is not configured correctly' };
+      return {
+        ok: false,
+        status: 500,
+        error: 'App Check is not configured correctly',
+        reason: error.code,
+      };
     }
 
-    return { ok: false, status: 403, error: 'Invalid App Check token' };
+    return {
+      ok: false,
+      status: 403,
+      error: 'Invalid App Check token',
+      reason: error.code || 'app_check_verification_failed',
+    };
   }
 }
 
@@ -1206,7 +1236,10 @@ export default async function handler(req, res) {
 
     const appCheckResult = await verifyAppCheckToken(req);
     if (!appCheckResult.ok) {
-      return res.status(appCheckResult.status).json({ error: appCheckResult.error });
+      return res.status(appCheckResult.status).json({
+        error: appCheckResult.error,
+        reason: appCheckResult.reason,
+      });
     }
 
     const validationResult = validateChatRequest(req.body);
