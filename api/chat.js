@@ -12,6 +12,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 // Initialize Gemini AI
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 let appCheckVerifier = null;
+let firebaseServiceAccount = null;
 
 const ALLOWED_LANGUAGES = new Set(['english', 'telugu']);
 const ALLOWED_HISTORY_ROLES = new Set(['user', 'model']);
@@ -105,17 +106,33 @@ const corsHeaders = {
 };
 
 function parseFirebaseServiceAccount() {
+  if (firebaseServiceAccount !== null) {
+    return firebaseServiceAccount;
+  }
+
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    firebaseServiceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    return firebaseServiceAccount;
   }
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
-    return JSON.parse(
+    firebaseServiceAccount = JSON.parse(
       Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
     );
+    return firebaseServiceAccount;
   }
 
+  firebaseServiceAccount = undefined;
   return null;
+}
+
+function getFirebaseProjectId(serviceAccount) {
+  return (
+    process.env.FIREBASE_PROJECT_ID ||
+    serviceAccount?.project_id ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    process.env.GCLOUD_PROJECT
+  );
 }
 
 function getAppCheckVerifier() {
@@ -123,7 +140,9 @@ function getAppCheckVerifier() {
     return appCheckVerifier;
   }
 
-  if (!process.env.FIREBASE_PROJECT_ID) {
+  const serviceAccount = parseFirebaseServiceAccount();
+  const projectId = getFirebaseProjectId(serviceAccount);
+  if (!projectId) {
     throw Object.assign(new Error('FIREBASE_PROJECT_ID is not configured'), {
       code: 'app/missing-project-id',
     });
@@ -135,10 +154,9 @@ function getAppCheckVerifier() {
     return appCheckVerifier;
   }
 
-  const serviceAccount = parseFirebaseServiceAccount();
   const app = initializeApp({
     credential: serviceAccount ? cert(serviceAccount) : applicationDefault(),
-    projectId: process.env.FIREBASE_PROJECT_ID,
+    projectId,
   });
 
   appCheckVerifier = getAppCheck(app);
@@ -164,7 +182,7 @@ async function verifyAppCheckToken(req) {
     console.error('App Check verification failed:', {
       code: error?.code,
       message: error?.message,
-      projectIdConfigured: Boolean(process.env.FIREBASE_PROJECT_ID),
+      projectIdConfigured: Boolean(getFirebaseProjectId(parseFirebaseServiceAccount())),
       serviceAccountConfigured: Boolean(
         process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
         process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
