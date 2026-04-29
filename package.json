@@ -2,7 +2,11 @@
   "name": "stb-backend",
   "version": "1.0.0",
   "description": "Backend API proxy for Simple Telugu Bible - Gemini AI integration",
+  "type": "module",
   "main": "api/chat.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod"
@@ -16,8 +20,9 @@
   "author": "Line Height Design",
   "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google/genai": "^1.50.0",
     "@upstash/ratelimit": "^2.0.6",
-    "@upstash/redis": "^1.35.6"
+    "@upstash/redis": "^1.35.6",
+    "firebase-admin": "^13.8.0"
   }
 }

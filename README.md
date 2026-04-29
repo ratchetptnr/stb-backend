@@ -7,7 +7,7 @@ Backend API proxy for Simple Telugu Bible app. Securely proxies Gemini AI reques
 - ✅ Gemini AI chat proxy
 - ✅ Rate limiting (100 requests/hour per IP)
 - ✅ CORS enabled for mobile apps
-- ✅ Simple app secret authentication
+- ✅ Firebase App Check verification for Android clients
 - ✅ Serverless deployment on Vercel (free tier)
 
 ## API Endpoints
@@ -19,7 +19,8 @@ Send a chat message and receive AI response.
 **Headers:**
 ```
 Content-Type: application/json
-X-App-Secret: your_app_secret
+X-Firebase-AppCheck: firebase_app_check_token
+X-App-Secret: legacy_app_secret_if_enabled
 ```
 
 **Request Body:**
@@ -43,9 +44,18 @@ X-App-Secret: your_app_secret
 ```json
 {
   "response": "Moses was a prophet who led...",
-  "timestamp": "2025-10-24T13:52:00.000Z"
+  "timestamp": "2025-10-24T13:52:00.000Z",
+  "citations": ["Exodus 3:10", "Exodus 14:21"],
+  "followUpQuestions": ["What can we learn from Moses' obedience?"]
 }
 ```
+
+**Validation:**
+- `message` must be a non-empty string up to 8,000 characters.
+- `language` must be `english` or `telugu`; omitted language defaults to `telugu`.
+- `conversationHistory` must be an array of `{ "role": "user" | "model", "content": "..." }`.
+- The backend keeps at most the latest 30 history messages and normalizes them into complete `user -> model` turns before sending them to Gemini.
+- The backend requests structured JSON output from Gemini so citations and follow-up questions are returned as explicit fields instead of being inferred from freeform text.
 
 ## Deployment to Vercel
 
@@ -53,6 +63,8 @@ X-App-Secret: your_app_secret
 1. Vercel account (free): https://vercel.com/signup
 2. Vercel CLI: `npm install -g vercel`
 3. Gemini API key: https://aistudio.google.com/app/apikey
+4. Firebase project with the Android app registered for `com.ratchet.simpletelugubible`
+5. App Check enabled with the Play Integrity provider for the Android app
 
 ### Steps
 
@@ -74,7 +86,9 @@ X-App-Secret: your_app_secret
 4. **Set environment variables in Vercel dashboard:**
    - Go to your project settings
    - Add `GEMINI_API_KEY` = your Gemini API key
-   - Add `APP_SECRET` = a random secret string (e.g., `stb_secret_2024_xyz`)
+   - Add `FIREBASE_PROJECT_ID` = your Firebase project ID
+   - Add `FIREBASE_SERVICE_ACCOUNT_BASE64` = base64-encoded Firebase service account JSON
+   - `APP_SECRET` is legacy-only and is no longer the production protection layer
 
 5. **Your API will be live at:**
    ```
@@ -83,8 +97,8 @@ X-App-Secret: your_app_secret
 
 ## Security
 
-- **Rate Limiting:** 100 requests per IP per hour
-- **App Secret:** Optional authentication header
+- **App Check:** Requests must include a valid `X-Firebase-AppCheck` token from the Android app
+- **Rate Limiting:** Redis-backed request limits
 - **No API key exposure:** Key stays on server only
 - **CORS:** Configured for mobile apps
 
@@ -99,7 +113,8 @@ cp .env.example .env
 
 # Add your keys to .env
 # GEMINI_API_KEY=...
-# APP_SECRET=...
+# FIREBASE_PROJECT_ID=...
+# FIREBASE_SERVICE_ACCOUNT_BASE64=...
 
 # Run locally
 npm run dev
@@ -113,7 +128,7 @@ npm run dev
 // In your app, call the backend instead of Gemini directly
 val response = httpClient.post("https://your-project.vercel.app/api/chat") {
     headers {
-        append("X-App-Secret", "your_app_secret")
+        append("X-Firebase-AppCheck", appCheckToken)
     }
     setBody(ChatRequest(
         message = userMessage,
